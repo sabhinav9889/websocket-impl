@@ -3,6 +3,7 @@ package consumer
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -64,6 +65,7 @@ func (bc *BufferedConsumer) processSingleMessage(msg string, wg *sync.WaitGroup)
 	defer wg.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	fmt.Println("Procesing message : :=")
 	_, err := bc.consumerImpl.ProcessMessage(ctx, msg)
 	if err != nil {
 		log.Println("Failed to process message:", err)

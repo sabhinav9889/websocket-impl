@@ -2,7 +2,6 @@
 package websocket
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -19,6 +18,8 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var once sync.Once
+
 type WebSocketServer struct {
 	serverID  string
 	clients   sync.Map
@@ -31,6 +32,12 @@ type WebSocketServer struct {
 
 func getChannelName(userId, serverId string) string {
 	return userId + "_" + serverId
+}
+
+func (ws *WebSocketServer) CallRedisfunc() {
+	once.Do(func() {
+		ws.ReceiveMessagesRedis()
+	})
 }
 
 func getMacAddress() (string, error) {
@@ -76,22 +83,20 @@ func (ws *WebSocketServer) HandleConnection(w http.ResponseWriter, r *http.Reque
 	ws.redis.SetUserServer(userID, ws.serverID)
 
 	go ws.readMessages(userID, conn)
-	go ws.ReceiveMessagesRedis(userID)
 }
 
 // Receive message from consumer via channels
-func (ws *WebSocketServer) ReceiveMessagesRedis(userId string) {
-	ctx := context.Background()
-	pubsub := ws.redis.Client.Subscribe(ctx, ws.serverID)
-	defer pubsub.Close()
-	ws.redis.Subscribe(pubsub, func(s string) {
+
+// abhinav, vionth and ram --> each user have subscibe to a channel ( channelname --> mac address)
+func (ws *WebSocketServer) ReceiveMessagesRedis() {
+	ws.redis.Subscribe(ws.serverID, func(s string) {
+		fmt.Println("Pay load : ", s)
 		var msg models.Message
 		err := json.Unmarshal([]byte(s), &msg)
 		if err != nil {
 			log.Println("Fail to unmarshal pubsub data", err)
 			return
 		}
-		fmt.Println(msg)
 		ws.SendMessage(msg.ReceiverID, s)
 	})
 }
@@ -128,6 +133,7 @@ func (ws *WebSocketServer) SendMessage(userID, message string) {
 
 func (ws *WebSocketServer) Start(port, queueName string) {
 	ws.queueName = queueName
+	go ws.CallRedisfunc()
 	http.HandleFunc("/ws", ws.HandleConnection)
 	log.Println("WebSocket Server running on port", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
@@ -147,8 +153,5 @@ type MessagePayload struct {
 }
 
 func (ws *WebSocketServer) StartRedisListener() {
-	channel := "ws_channel:" + ws.serverID
-	ctx := context.Background()
-	pubsub := ws.redis.Client.Subscribe(ctx, channel)
-	ws.redis.Subscribe(pubsub, func(s string) {})
+	ws.redis.Subscribe(ws.serverID, func(s string) {})
 }

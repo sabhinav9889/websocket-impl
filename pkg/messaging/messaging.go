@@ -33,7 +33,7 @@ func Init(redisHost, redisPort, rabbitMQURL string, enableWebSocket, enableConsu
 	}
 }
 
-func (m *Messaging) StartWebSocketServer(port , queueName string) {
+func (m *Messaging) StartWebSocketServer(port, queueName string) {
 	if !m.runWebSocket {
 		log.Println("WebSocket server is disabled")
 		return

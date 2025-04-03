@@ -26,8 +26,8 @@ func (mc *MessageConsumer) ProcessMessage(ctx context.Context, message string) (
 		log.Println("Failed to unmarshal message:", err)
 		return false, err
 	}
-	serverId := mc.RedisClient.GetUserServer(messageData.ReceiverID)
-	go mc.RedisClient.Publish(serverId, message)
+	// serverId := mc.RedisClient.GetUserServer(messageData.ReceiverID)
+	// go mc.RedisClient.Publish(serverId, message)
 	return true, nil
 }
 
