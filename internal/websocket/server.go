@@ -2,7 +2,6 @@
 package websocket
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -44,7 +43,7 @@ func getMacAddress() (string, error) {
 			return iface.HardwareAddr.String(), nil
 		}
 	}
-	return "", fmt.Errorf("Mac Address not found")
+	return "", fmt.Errorf("mac address not found")
 }
 
 func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitMQ) *WebSocketServer {
@@ -76,22 +75,16 @@ func (ws *WebSocketServer) HandleConnection(w http.ResponseWriter, r *http.Reque
 	ws.redis.SetUserServer(userID, ws.serverID)
 
 	go ws.readMessages(userID, conn)
-	go ws.ReceiveMessagesRedis(userID)
 }
 
-// Receive message from consumer via channels
-func (ws *WebSocketServer) ReceiveMessagesRedis(userId string) {
-	ctx := context.Background()
-	pubsub := ws.redis.Client.Subscribe(ctx, ws.serverID)
-	defer pubsub.Close()
-	ws.redis.Subscribe(pubsub, func(s string) {
+func (ws *WebSocketServer) StartRedisMessageListener() {
+	ws.redis.Subscribe(ws.serverID, func(s string) {
 		var msg models.Message
 		err := json.Unmarshal([]byte(s), &msg)
 		if err != nil {
 			log.Println("Fail to unmarshal pubsub data", err)
 			return
 		}
-		fmt.Println(msg)
 		ws.SendMessage(msg.ReceiverID, s)
 	})
 }
@@ -139,16 +132,4 @@ func (ws *WebSocketServer) StartHeartbeat() {
 	for range ticker.C {
 		ws.redis.SetWithTTL("server_heartbeat:"+ws.serverID, "alive", 10*time.Second)
 	}
-}
-
-type MessagePayload struct {
-	UserID  string
-	Message string
-}
-
-func (ws *WebSocketServer) StartRedisListener() {
-	channel := "ws_channel:" + ws.serverID
-	ctx := context.Background()
-	pubsub := ws.redis.Client.Subscribe(ctx, channel)
-	ws.redis.Subscribe(pubsub, func(s string) {})
 }

@@ -38,7 +38,9 @@ func (r *RedisClient) Exists(key string) bool {
 	return count > 0
 }
 
-func (r *RedisClient) Subscribe(pubsub *redis.PubSub, handler func(string)) {
+func (r *RedisClient) Subscribe(channelName string, handler func(string)) {
+	pubsub := r.Client.Subscribe(context.Background(), channelName)
+	defer pubsub.Close()
 	for msg := range pubsub.Channel() {
 		handler(msg.Payload)
 	}

@@ -3,7 +3,7 @@ package consumer
 
 import (
 	"context"
-	"log"
+	log "github.com/sirupsen/logrus"
 	"sync"
 	"time"
 
@@ -35,16 +35,15 @@ func NewBufferedConsumer(rabbitMQ *rabbitmq.RabbitMQ, consumer QueueConsumer, bu
 func (bc *BufferedConsumer) Start(queueName string) {
 	go bc.consumeMessages()
 
-	for {
-		// Start consuming messages from RabbitMQ
-		err := bc.rabbitMQ.Consume(queueName, func(msg string) {
-			// Handler function for each received message
-			// Push received messages to buffer for later processing
-			bc.buffer <- msg
-		})
-		if err != nil {
-			log.Println("Error receiving messages:", err)
-		}
+	// Start consuming messages from RabbitMQ
+	err := bc.rabbitMQ.Consume(queueName, func(msg string) {
+		// Handler function for each received message
+		// Push received messages to buffer for later processing
+		bc.buffer <- msg
+	})
+
+	if err != nil {
+		log.WithError(err).WithField("queue", queueName).Error("failed to start RabbitMQ consumer")
 	}
 }
 
@@ -66,6 +65,6 @@ func (bc *BufferedConsumer) processSingleMessage(msg string, wg *sync.WaitGroup)
 	defer cancel()
 	_, err := bc.consumerImpl.ProcessMessage(ctx, msg)
 	if err != nil {
-		log.Println("Failed to process message:", err)
+		log.WithError(err).Error("Failed to process message")
 	}
 }

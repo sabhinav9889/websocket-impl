@@ -6,13 +6,11 @@ import (
 	"encoding/json"
 	"log"
 	"websocket-messaging/internal/models"
-	//"websocket-messaging/internal/rabbitmq"
 	"websocket-messaging/internal/redis"
 )
 
 type MessageConsumer struct {
-	redisClient redis.RedisClient
-	//queue     *rabbitmq.RabbitMQ
+	RedisClient redis.RedisClient
 }
 
 // NewMessageConsumer creates a new instance of MessageConsumer
@@ -28,9 +26,8 @@ func (mc *MessageConsumer) ProcessMessage(ctx context.Context, message string) (
 		log.Println("Failed to unmarshal message:", err)
 		return false, err
 	}
-	serverId := mc.redisClient.GetUserServer(messageData.ReceiverID)
-	go mc.redisClient.Publish(serverId, message)
-	
+	serverId := mc.RedisClient.GetUserServer(messageData.ReceiverID)
+	go mc.RedisClient.Publish(serverId, message)
 	return true, nil
 }
 

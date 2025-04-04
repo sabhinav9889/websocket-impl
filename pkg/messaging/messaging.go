@@ -40,8 +40,12 @@ func (m *Messaging) StartWebSocketServer(port, queueName string) {
 		log.Println("WebSocket server is disabled")
 		return
 	}
+	
+	go m.wsServer.StartRedisMessageListener()
+
 	log.Println("WebSocket Server running on port", port)
 	m.wsServer.Start(port, queueName)
+	
 }
 
 func (m *Messaging) StartConsumer(queueName string, bufferSize int, host, port, username, password string) {
