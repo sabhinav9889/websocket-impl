@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"log"
-	"time"
 	"websocket-messaging/internal/models"
 	"websocket-messaging/internal/redis"
 )
@@ -27,7 +26,6 @@ func (mc *MessageConsumer) ProcessMessage(ctx context.Context, message string) (
 		return false, err
 	}
 	serverId := mc.RedisClient.GetUserServer(messageData.ReceiverID)
-	time.Sleep(time.Second * 5)
 	go mc.RedisClient.Publish(serverId, message) // macAddress
 	return true, nil
 }

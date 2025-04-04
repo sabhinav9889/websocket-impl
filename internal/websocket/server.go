@@ -48,10 +48,12 @@ func getMacAddress() (string, error) {
 
 func getRecieverMessage(messageData models.MessageStruct, receiverId string) models.Message {
 	var message models.Message
+	if messageData.Type == "content" {
+		message.Content = messageData.Content
+	}
 	message.MessageId = messageData.MessageId
 	message.Status = messageData.Status
 	message.Type = messageData.Type
-	message.Content = messageData.Content
 	message.ReceiverID = receiverId
 	message.SenderID = messageData.SenderID
 	message.TimeStamp = messageData.TimeStamp
@@ -111,7 +113,7 @@ func (ws *WebSocketServer) readMessages(userID string, conn *websocket.Conn) {
 			return
 		}
 		var messageList models.MessageStruct
-		err = json.Unmarshal(message, messageList)
+		err = json.Unmarshal(message, &messageList)
 		if err != nil {
 			log.Println("Error while unmarshelling message", err)
 			return

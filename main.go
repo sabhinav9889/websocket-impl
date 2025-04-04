@@ -32,7 +32,7 @@ func main() {
 
 	// Start Consumer if enabled
 	if enableConsumer {
-		bufferSize := 10
+		bufferSize := 100
 		go msgService.StartConsumer(queueName, bufferSize, redisHost, redisPort, redisUserName, redisPassword)
 	}
 	// Keep the server running
