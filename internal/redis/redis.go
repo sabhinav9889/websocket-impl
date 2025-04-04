@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -12,9 +11,11 @@ type RedisClient struct {
 	Client *redis.Client
 }
 
-func NewRedis(host string, port string) *RedisClient {
+func NewRedis(host, port, username, password string) *RedisClient {
 	rdb := redis.NewClient(&redis.Options{
-		Addr: host + ":" + port,
+		Addr:     host + ":" + port,
+		Username: username,
+		Password: password,
 	})
 	return &RedisClient{Client: rdb}
 }
@@ -40,9 +41,7 @@ func (r *RedisClient) Exists(key string) bool {
 func (r *RedisClient) Subscribe(channelName string, handler func(string)) {
 	pubsub := r.Client.Subscribe(context.Background(), channelName)
 	defer pubsub.Close()
-	fmt.Println("chann length: ", len(pubsub.Channel()))
 	for msg := range pubsub.Channel() {
-		fmt.Println(msg.Payload, msg.Channel)
 		handler(msg.Payload)
 	}
 }

@@ -18,8 +18,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-var once sync.Once
-
 type WebSocketServer struct {
 	serverID  string
 	clients   sync.Map
@@ -34,12 +32,6 @@ func getChannelName(userId, serverId string) string {
 	return userId + "_" + serverId
 }
 
-func (ws *WebSocketServer) CallRedisfunc() {
-	once.Do(func() {
-		ws.ReceiveMessagesRedis()
-	})
-}
-
 func getMacAddress() (string, error) {
 	interfaces, err := net.Interfaces()
 	if err != nil {
@@ -51,7 +43,19 @@ func getMacAddress() (string, error) {
 			return iface.HardwareAddr.String(), nil
 		}
 	}
-	return "", fmt.Errorf("Mac Address not found")
+	return "", fmt.Errorf("mac address not found")
+}
+
+func getRecieverMessage(messageData models.MessageStruct, receiverId string) models.Message {
+	var message models.Message
+	message.MessageId = messageData.MessageId
+	message.Status = messageData.Status
+	message.Type = messageData.Type
+	message.Content = messageData.Content
+	message.ReceiverID = receiverId
+	message.SenderID = messageData.SenderID
+	message.TimeStamp = messageData.TimeStamp
+	return message
 }
 
 func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitMQ) *WebSocketServer {
@@ -85,12 +89,8 @@ func (ws *WebSocketServer) HandleConnection(w http.ResponseWriter, r *http.Reque
 	go ws.readMessages(userID, conn)
 }
 
-// Receive message from consumer via channels
-
-// abhinav, vionth and ram --> each user have subscibe to a channel ( channelname --> mac address)
-func (ws *WebSocketServer) ReceiveMessagesRedis() {
+func (ws *WebSocketServer) StartRedisMessageListener() {
 	ws.redis.Subscribe(ws.serverID, func(s string) {
-		fmt.Println("Pay load : ", s)
 		var msg models.Message
 		err := json.Unmarshal([]byte(s), &msg)
 		if err != nil {
@@ -110,12 +110,25 @@ func (ws *WebSocketServer) readMessages(userID string, conn *websocket.Conn) {
 			ws.clients.Delete(userID)
 			return
 		}
-		go func() {
-			err := ws.queue.Publish(ws.queueName, string(message))
+		var messageList models.MessageStruct
+		err = json.Unmarshal(message, messageList)
+		if err != nil {
+			log.Println("Error while unmarshelling message", err)
+			return
+		}
+		for _, receiverId := range messageList.ReceiverList {
+			receiverMessage := getRecieverMessage(messageList, receiverId)
+			msg, err := json.Marshal(receiverMessage)
 			if err != nil {
-				log.Println("Error in publishing message into the queue :", err)
+				log.Println("Error while marshelling message", err)
 			}
-		}()
+			go func() {
+				err := ws.queue.Publish(ws.queueName, string(msg))
+				if err != nil {
+					log.Println("Error in publishing message into the queue :", err)
+				}
+			}()
+		}
 		log.Printf("Received message from %s: %s", userID, string(message))
 	}
 }
@@ -133,7 +146,6 @@ func (ws *WebSocketServer) SendMessage(userID, message string) {
 
 func (ws *WebSocketServer) Start(port, queueName string) {
 	ws.queueName = queueName
-	go ws.CallRedisfunc()
 	http.HandleFunc("/ws", ws.HandleConnection)
 	log.Println("WebSocket Server running on port", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
@@ -145,13 +157,4 @@ func (ws *WebSocketServer) StartHeartbeat() {
 	for range ticker.C {
 		ws.redis.SetWithTTL("server_heartbeat:"+ws.serverID, "alive", 10*time.Second)
 	}
-}
-
-type MessagePayload struct {
-	UserID  string
-	Message string
-}
-
-func (ws *WebSocketServer) StartRedisListener() {
-	ws.redis.Subscribe(ws.serverID, func(s string) {})
 }

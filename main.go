@@ -12,15 +12,18 @@ func main() {
 	// serverID := getEnv("SERVER_ID", "server-1")
 	redisHost := getEnv("REDIS_HOST", "localhost")
 	redisPort := getEnv("REDIS_PORT", "6379")
+	redisUserName := getEnv("REDIS_USERNAME", "")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
 	rabbitMQURL := getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
 	//dbURL := getEnv("DB_URL", "")
 	webSocketPort := getEnv("WS_PORT", "8000")
 	queueName := getEnv("RABBITMQ_QUEUE", "test-queue")
 	enableWebSocket := getEnv("ENABLE_WEBSOCKET", "true") == "true"
 	enableConsumer := getEnv("ENABLE_CONSUMER", "true") == "true"
+	enableHistoryConsumer := getEnv("ENABLE_HISTORY_CONSUMER", "true") == "true"
 
 	// Initialize Messaging
-	msgService := messaging.Init(redisHost, redisPort, rabbitMQURL, enableWebSocket, enableConsumer)
+	msgService := messaging.Init(redisHost, redisPort, redisUserName, redisPassword, rabbitMQURL, enableWebSocket, enableConsumer, enableHistoryConsumer)
 
 	// Start WebSocket Server if enabled
 	if enableWebSocket {
@@ -29,7 +32,8 @@ func main() {
 
 	// Start Consumer if enabled
 	if enableConsumer {
-		go msgService.StartConsumer(queueName, redisHost, redisPort)
+		bufferSize := 10
+		go msgService.StartConsumer(queueName, bufferSize, redisHost, redisPort, redisUserName, redisPassword)
 	}
 	// Keep the server running
 	select {}
