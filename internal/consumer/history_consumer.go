@@ -9,8 +9,8 @@ import (
 type HistoryConsumer struct{}
 
 // NewMessageConsumer creates a new instance of MessageConsumer
-func GetHistoryConsumer() *MessageConsumer {
-	return &MessageConsumer{}
+func GetHistoryConsumer() *HistoryConsumer {
+	return &HistoryConsumer{}
 }
 
 func (hc *HistoryConsumer) ProcessMessage(ctx context.Context, message string) (bool, error) {
