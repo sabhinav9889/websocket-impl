@@ -15,7 +15,7 @@ type MessageStruct struct {
 
 type Message struct {
 	MessageId  string `json:"message_id"`
-	Status     string `json:"status"`      // edit or not
+	Status     string `json:"status"` 
 	Type       string `json:"type"`        // Message type (e.g., "status", "content", "file")
 	Content    string `json:"content"`     // The message content (e.g., status message or text)
 	ReceiverID string `json:"receiver_id"` // Receiver who receive this message from sender
