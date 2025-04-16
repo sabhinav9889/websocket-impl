@@ -2,30 +2,32 @@
 package websocket
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
-	_ "websocket-messaging/internal/database"
+	"websocket-messaging/internal/database"
 	"websocket-messaging/internal/models"
 	"websocket-messaging/internal/rabbitmq"
 	"websocket-messaging/internal/redis"
 
 	"github.com/gorilla/websocket"
+	log "github.com/sirupsen/logrus"
 )
 
 type WebSocketServer struct {
 	serverID  string
-	clients   sync.Map
+	clients   sync.Map // userID -> *WsClient
 	redis     *redis.RedisClient
 	upgrader  websocket.Upgrader
 	queueName string
 	queue     *rabbitmq.RabbitMQ
-	mutex     sync.Mutex
+	hub       *Hub
+	MongoDb   *database.MongoDB
 }
 
 func getChannelName(userId, serverId string) string {
@@ -46,21 +48,7 @@ func getMacAddress() (string, error) {
 	return "", fmt.Errorf("mac address not found")
 }
 
-func getRecieverMessage(messageData models.MessageStruct, receiverId string) models.Message {
-	var message models.Message
-	if messageData.Type == "content" {
-		message.Content = messageData.Content
-	}
-	message.MessageId = messageData.MessageId
-	message.Status = messageData.Status
-	message.Type = messageData.Type
-	message.ReceiverID = receiverId
-	message.SenderID = messageData.SenderID
-	message.TimeStamp = messageData.TimeStamp
-	return message
-}
-
-func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitMQ) *WebSocketServer {
+func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitMQ, dbUri, dbName, dbCollection string) *WebSocketServer {
 	macAdd, err := getMacAddress()
 	if err != nil {
 		log.Println("Fail to get mac address: ", err)
@@ -74,89 +62,96 @@ func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitM
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
+		MongoDb: database.NewDatabase(dbUri, dbName, dbCollection),
 	}
 }
 
-func (ws *WebSocketServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
-	conn, err := ws.upgrader.Upgrade(w, r, nil)
+func (ws *WebSocketServer) RetrivePendingMessage(userID string, client *WsClient) {
+	var messsage []string
+	go func() {
+		msg, err := ws.MongoDb.GetPendingMessages(userID)
+		fmt.Println("Pending messages: ", msg)
+		if err != nil {
+			log.WithError(err).Error("Failed to retrieve pending messages")
+			return
+		}
+		err = ws.MongoDb.ChangeMessageStatus(userID)
+		if err != nil {
+			log.WithError(err).Error("Failed to change the message status")
+			return
+		}
+		messsage = msg
+		for _, message := range messsage {
+			client.Message <- message
+		}
+	}()
+}
+
+func (ws *WebSocketServer) PublishMessage(msg string) error {
+	err := ws.queue.Publish(ws.queueName, msg)
 	if err != nil {
-		log.Println("WebSocket upgrade failed:", err)
+		return err
+	}
+	return nil
+}
+
+func (ws *WebSocketServer) HandleConnection(w http.ResponseWriter, r *http.Request) {
+	Conn, err := ws.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.WithError(err).Error("WebSocket upgrade failed")
 		return
 	}
-
 	userID := r.URL.Query().Get("userID")
-	ws.clients.Store(userID, conn)
+	client := &WsClient{Conn: Conn, Message: make(chan string), UserID: userID}
+	ws.clients.Store(userID, client)
 	ws.redis.SetUserServer(userID, ws.serverID)
+	ws.RetrivePendingMessage(userID, client)
+	go client.readMessages(ws)
+	go client.StartWriter()
+}
 
-	go ws.readMessages(userID, conn)
+func (ws *WebSocketServer) StartHubServer() {
+	hub := NewHub()
+	ws.hub = hub
+	go ws.hub.Run(ws)
 }
 
 func (ws *WebSocketServer) StartRedisMessageListener() {
 	ws.redis.Subscribe(ws.serverID, func(s string) {
 		var msg models.Message
-		err := json.Unmarshal([]byte(s), &msg)
-		if err != nil {
-			log.Println("Fail to unmarshal pubsub data", err)
+		if err := json.Unmarshal([]byte(s), &msg); err != nil {
+			log.WithError(err).Error("Failed to unmarshal pubsub data")
 			return
 		}
 		ws.SendMessage(msg.ReceiverID, s)
 	})
 }
 
-func (ws *WebSocketServer) readMessages(userID string, conn *websocket.Conn) {
-	defer conn.Close()
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			log.Println("Error reading message:", err)
-			ws.clients.Delete(userID)
-			return
-		}
-		var messageList models.MessageStruct
-		err = json.Unmarshal(message, &messageList)
-		if err != nil {
-			log.Println("Error while unmarshelling message", err)
-			return
-		}
-		for _, receiverId := range messageList.ReceiverList {
-			receiverMessage := getRecieverMessage(messageList, receiverId)
-			msg, err := json.Marshal(receiverMessage)
-			if err != nil {
-				log.Println("Error while marshelling message", err)
-			}
-			go func() {
-				err := ws.queue.Publish(ws.queueName, string(msg))
-				if err != nil {
-					log.Println("Error in publishing message into the queue :", err)
-				}
-			}()
-		}
-		log.Printf("Received message from %s: %s", userID, string(message))
-	}
-}
-
 func (ws *WebSocketServer) SendMessage(userID, message string) {
-	ws.mutex.Lock() // Lock before writing
-	defer ws.mutex.Unlock()
-	if conn, exists := ws.clients.Load(userID); exists {
-		err := conn.(*websocket.Conn).WriteMessage(websocket.TextMessage, []byte(message))
-		if err != nil {
-			log.Println("Error sending message:", err)
-		}
+	if c, ok := ws.clients.Load(userID); ok {
+		client := c.(*WsClient)
+		client.Mu.Lock()
+		defer client.Mu.Unlock()
+		client.Message <- message
 	}
 }
 
-func (ws *WebSocketServer) Start(port, queueName string) {
+func (ws *WebSocketServer) Start(port, queueName string) error {
 	ws.queueName = queueName
 	http.HandleFunc("/ws", ws.HandleConnection)
-	log.Println("WebSocket Server running on port", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.WithField("port", port).Info("WebSocket Server starting")
+	return http.ListenAndServe(":"+port, nil)
 }
 
-func (ws *WebSocketServer) StartHeartbeat() {
+func (ws *WebSocketServer) StartHeartbeat(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	for range ticker.C {
-		ws.redis.SetWithTTL("server_heartbeat:"+ws.serverID, "alive", 10*time.Second)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			ws.redis.SetWithTTL("server_heartbeat:"+ws.serverID, "alive", 10*time.Second)
+		}
 	}
 }

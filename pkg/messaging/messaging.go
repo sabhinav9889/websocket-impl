@@ -17,13 +17,13 @@ type Messaging struct {
 	runHistoryConsumer bool
 }
 
-func Init(redisHost, redisPort, username, password, rabbitMQURL string, enableWebSocket, enableConsumer, enableHistoryConsumer bool) *Messaging {
+func Init(redisHost, redisPort, username, password, rabbitMQURL string, enableWebSocket, enableConsumer, enableHistoryConsumer bool, dbUri, dbName, dbCollection string) *Messaging {
 	redisClient := redis.NewRedis(redisHost, redisPort, username, password)
 	rabbitMQ := rabbitmq.NewRabbitMQ(rabbitMQURL)
 
 	var wsServer *websocket.WebSocketServer
 	if enableWebSocket {
-		wsServer = websocket.NewWebSocketServer(redisClient, rabbitMQ)
+		wsServer = websocket.NewWebSocketServer(redisClient, rabbitMQ, dbUri, dbName, dbCollection)
 	}
 
 	return &Messaging{
@@ -42,20 +42,20 @@ func (m *Messaging) StartWebSocketServer(port, queueName string) {
 	}
 
 	go m.wsServer.StartRedisMessageListener()
-
+	go m.wsServer.StartHubServer()
 	log.Println("WebSocket Server running on port", port)
 	m.wsServer.Start(port, queueName)
 
 }
 
-func (m *Messaging) StartConsumer(queueName string, bufferSize int, host, port, username, password string) {
+func (m *Messaging) StartConsumer(queueName string, bufferSize int, host, port, username, password, dbUri, dbName, dbCollectionName string) {
 	redisClient := redis.NewRedis(host, port, username, password)
 	if !m.runConsumer {
 		log.Println("Consumer is disabled")
 		return
 	}
 	// Initialize the consumer
-	messageConsumer := consumer.GetMessageConsumer(*redisClient)
+	messageConsumer := consumer.GetMessageConsumer(*redisClient, dbUri, dbName, dbCollectionName)
 
 	// Initialize the BufferedConsumer
 	bufferedConsumer := consumer.NewBufferedConsumer(m.rabbitMQ, messageConsumer, bufferSize)

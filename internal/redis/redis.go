@@ -24,9 +24,8 @@ func (r *RedisClient) SetUserServer(userID, serverID string) {
 	r.Client.Set(context.Background(), "user_server:"+userID, serverID, 0)
 }
 
-func (r *RedisClient) GetUserServer(userID string) string {
-	val, _ := r.Client.Get(context.Background(), "user_server:"+userID).Result()
-	return val
+func (r *RedisClient) GetUserServer(userID string) (string, error) {
+	return r.Client.Get(context.Background(), "user_server:"+userID).Result()
 }
 
 func (r *RedisClient) SetWithTTL(key, value string, ttl time.Duration) {
@@ -48,4 +47,8 @@ func (r *RedisClient) Subscribe(channelName string, handler func(string)) {
 
 func (r *RedisClient) Publish(channel, message string) {
 	r.Client.Publish(context.Background(), channel, message)
+}
+
+func (r *RedisClient) DeleteUserServer(userID string) {
+	r.Client.Del(context.Background(), "user_server:"+userID).Result()
 }
