@@ -86,8 +86,8 @@ func (db *MongoDB) UpdateMessage(chatMessage ChatMessage) error {
 			"messageType":    chatMessage.MessageType,
 		},
 	}
-	filter := bson.M{"messageId": chatMessage.MessageId}
-	res, err := db.collection.UpdateMany(ctx, filter, update)
+	filter := bson.M{"messageId": chatMessage.MessageId, "receiverID": chatMessage.ReceiverID}
+	res, err := db.collection.UpdateOne(ctx, filter, update)
 	fmt.Println("Update result:", res)
 	if res.MatchedCount == 0 {
 		fmt.Println("No document matched the filter")

@@ -88,7 +88,7 @@ func (hub *Hub) Run(ws *WebSocketServer) {
 				log.Info("Group not found")
 			}
 		case c2 := <-hub.Unregister:
-			if grp, ok := hub.Groups.Load(c2.GroupID); !ok {
+			if grp, ok := hub.Groups.Load(c2.GroupID); ok {
 				group := grp.(*Group)
 				group.Mu.RLock()
 				_, ok := group.Clients[c2.UserID]
@@ -99,6 +99,8 @@ func (hub *Hub) Run(ws *WebSocketServer) {
 				} else {
 					log.Info("Client not registered in group")
 				}
+			} else {
+				log.Info("Group not found")
 			}
 		case c3 := <-hub.Broadcast:
 			var msg models.Message

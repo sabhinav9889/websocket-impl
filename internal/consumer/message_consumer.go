@@ -4,7 +4,6 @@ package consumer
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"websocket-messaging/internal/database"
 	"websocket-messaging/internal/models"
 	"websocket-messaging/internal/redis"
@@ -55,7 +54,6 @@ func (mc *MessageConsumer) ProcessMessage(ctx context.Context, message string) (
 	}
 	if messageData.Status == "edited" {
 		message := getDbMessage(messageData)
-		fmt.Println("Message to be updated in DB: ", message)
 		err := mc.MogDb.UpdateMessage(message)
 		if err != nil {
 			log.Info("Failed to update message in DB:", err)
