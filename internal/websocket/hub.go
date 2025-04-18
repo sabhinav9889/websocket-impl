@@ -51,10 +51,14 @@ func (hub *Hub) PrintGroup() {
 	})
 }
 
-func (hub *Hub) CreateGroup(groupId string, name string) {
+func (hub *Hub) CreateGroup(groupId, name, userId string, users []string) {
 	grp := Group{GroupID: groupId, Name: name, Clients: make(map[string]bool)}
 	if _, ok := hub.Groups.Load(grp.GroupID); !ok {
 		hub.Groups.Store(grp.GroupID, &grp)
+		hub.Register <- &RegisterRequest{GroupID: grp.GroupID, UserID: userId}
+		for _, user := range users {
+			hub.Register <- &RegisterRequest{GroupID: grp.GroupID, UserID: user}
+		}
 		log.Info("Group created successfully: ", grp.Name)
 	} else {
 		log.Info("Group already exists: ", grp.Name)
@@ -119,8 +123,10 @@ func (hub *Hub) Run(ws *WebSocketServer) {
 						log.Info("Message broadcast successfully in group")
 					}
 				} else {
-					log.Info("Client is not registered yet in the group")
+					log.Info("Client is not registered yet in the group: ", msg.SenderID)
 				}
+			} else {
+				log.Info("Group not found")
 			}
 		}
 	}

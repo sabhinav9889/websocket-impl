@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"encoding/json"
-	"fmt"
 	"sync"
 	"websocket-messaging/internal/models"
 
@@ -33,7 +32,9 @@ func getRecieverMessage(messageData models.MessageStruct, receiverId string) mod
 
 func (client *WsClient) StartWriter() {
 	for message := range client.Message {
+		client.Mu.Lock()
 		err := client.Conn.WriteMessage(websocket.TextMessage, []byte(message))
+		client.Mu.Unlock()
 		if err != nil {
 			log.WithError(err).Error("Failed to send WebSocket message")
 			close(client.Message) // this will break the range loop
@@ -60,23 +61,37 @@ func (client *WsClient) readMessages(ws *WebSocketServer) {
 			log.WithError(err).Error("Error while unmarshelling message")
 			continue
 		}
+		messageList.SenderID = client.UserID
 		if messageList.Type == "group" {
-			group := RegisterRequest{GroupID: messageList.GroupID, UserID: messageList.SenderID}
 			if messageList.Status == "register" {
-				log.Info("Received message from ", client.UserID, ": to", string(message), group)
-				ws.hub.Register <- &group
+				for _, receiverId := range messageList.ReceiverList {
+					group := RegisterRequest{GroupID: messageList.GroupID, UserID: receiverId}
+					ws.hub.Register <- &group
+				}
 			} else if messageList.Status == "unregister" {
-				ws.hub.Unregister <- &group
-			} else if messageList.Status == "broadcast" {
-				fmt.Println("broadcast")
-				ws.hub.Broadcast <- string(message)
+				for _, receiverId := range messageList.ReceiverList {
+					group := RegisterRequest{GroupID: messageList.GroupID, UserID: receiverId}
+					ws.hub.Unregister <- &group
+				}
+			} else if messageList.Status == "broadcast" || messageList.Status == "edited" {
+				msg, _ := json.Marshal(messageList)
+				ws.hub.Broadcast <- string(msg)
 			} else if messageList.Status == "create" {
-				ws.hub.CreateGroup(messageList.GroupID, messageList.GroupName)
+				ws.hub.CreateGroup(messageList.GroupID, messageList.GroupName, client.UserID, messageList.ReceiverList)
 			}
 			continue
 		}
-		for _, receiverId := range messageList.ReceiverList {
-			receiverMessage := getRecieverMessage(messageList, receiverId)
+		if len(messageList.ReceiverList) != 0 {
+			for _, receiverId := range messageList.ReceiverList {
+				receiverMessage := getRecieverMessage(messageList, receiverId)
+				msg, err := json.Marshal(receiverMessage)
+				if err != nil {
+					log.WithError(err).Error("Error while marshelling message")
+				}
+				go ws.PublishMessage(string(msg))
+			}
+		} else {
+			receiverMessage := getRecieverMessage(messageList, messageList.ReceiverID)
 			msg, err := json.Marshal(receiverMessage)
 			if err != nil {
 				log.WithError(err).Error("Error while marshelling message")

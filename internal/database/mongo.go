@@ -61,7 +61,7 @@ func (db *MongoDB) SaveMessage(chatMessage ChatMessage) error {
 		"groupName":      chatMessage.GroupName,      // Nullable for group messages
 		"senderID":       chatMessage.SenderID,       // ID of the sender
 		"receiverID":     chatMessage.ReceiverID,     // ID of the receiver
-		"content":        chatMessage.MessageBody,    // Message text or file URL
+		"messageBody":    chatMessage.MessageBody,    // Message text or file URL
 		"messageType":    chatMessage.MessageType,    // "text", "image", "video", etc.
 		"status":         chatMessage.Status,         // "online", "typing", "edited"
 		"deliveryStatus": chatMessage.DeliveryStatus, // "sent", "delivered", "read"
@@ -78,7 +78,7 @@ func (db *MongoDB) UpdateMessage(chatMessage ChatMessage) error {
 	defer cancel()
 	update := bson.M{
 		"$set": bson.M{
-			"content":        chatMessage.MessageBody,
+			"messageBody":    chatMessage.MessageBody,
 			"status":         chatMessage.Status,
 			"deliveryStatus": chatMessage.DeliveryStatus,
 			"receivedAt":     chatMessage.ReceivedAt,
@@ -87,7 +87,7 @@ func (db *MongoDB) UpdateMessage(chatMessage ChatMessage) error {
 		},
 	}
 	filter := bson.M{"messageId": chatMessage.MessageId}
-	res, err := db.collection.UpdateOne(ctx, filter, update)
+	res, err := db.collection.UpdateMany(ctx, filter, update)
 	fmt.Println("Update result:", res)
 	if res.MatchedCount == 0 {
 		fmt.Println("No document matched the filter")

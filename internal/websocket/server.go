@@ -66,11 +66,40 @@ func NewWebSocketServer(redis *redis.RedisClient, queueService *rabbitmq.RabbitM
 	}
 }
 
+func refiningStruct(msg []string) []string {
+	var messages []string
+	for _, message := range msg {
+		fmt.Println("Printed message is : ", message)
+		var temp database.ChatMessage
+		err := json.Unmarshal([]byte(message), &temp)
+		if err != nil {
+			log.WithError(err).Error("Failed to unmarshal message")
+			continue
+		}
+		messagetemp := models.Message{
+			MessageId:        temp.MessageId,
+			Content:          temp.MessageBody,
+			Status:           temp.Status,
+			ReceivedAt:       temp.ReceivedAt,
+			CreatedAt:        temp.CreatedAt,
+			ConversationID:   temp.ConversationID,
+			ReplyToMessageID: temp.ReplyToMessageID,
+			SenderID:         temp.SenderID,
+			ReceiverID:       temp.ReceiverID,
+			GroupID:          temp.GroupID,
+			GroupName:        temp.GroupName,
+			Type:             temp.MessageType,
+		}
+		content, err := json.Marshal(messagetemp)
+		messages = append(messages, string(content))
+	}
+	return messages
+}
+
 func (ws *WebSocketServer) RetrivePendingMessage(userID string, client *WsClient) {
-	var messsage []string
 	go func() {
 		msg, err := ws.MongoDb.GetPendingMessages(userID)
-		fmt.Println("Pending messages: ", msg)
+
 		if err != nil {
 			log.WithError(err).Error("Failed to retrieve pending messages")
 			return
@@ -80,8 +109,8 @@ func (ws *WebSocketServer) RetrivePendingMessage(userID string, client *WsClient
 			log.WithError(err).Error("Failed to change the message status")
 			return
 		}
-		messsage = msg
-		for _, message := range messsage {
+		messsages := refiningStruct(msg)
+		for _, message := range messsages {
 			client.Message <- message
 		}
 	}()
