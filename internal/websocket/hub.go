@@ -92,6 +92,8 @@ func (hub *Hub) UnregisterUsers(groupId, userId string, userList []string) {
 		} else {
 			log.Info("Client not registered in group")
 		}
+	} else {
+		log.Info("Group not found")
 	}
 }
 
@@ -108,6 +110,8 @@ func (hub *Hub) RegisterUsers(groupId, userId string, userList []string) {
 		} else {
 			log.Info("Permission denied: Client is not admin")
 		}
+	} else {
+		log.Info("Group not found")
 	}
 }
 
@@ -150,7 +154,7 @@ func (hub *Hub) Run(ws *WebSocketServer) {
 					group.Mu.Lock()
 					group.Clients[c1.UserID] = true
 					group.Mu.Unlock()
-					log.Info("Client registered successfully in group")
+					log.Info("Client registered successfully in group", c1.UserID)
 				} else {
 					log.Info("Client already registered in group")
 				}
