@@ -64,20 +64,18 @@ func (client *WsClient) readMessages(ws *WebSocketServer) {
 		messageList.SenderID = client.UserID
 		if messageList.Type == "group" {
 			if messageList.Status == "register" {
-				for _, receiverId := range messageList.ReceiverList {
-					group := RegisterRequest{GroupID: messageList.GroupID, UserID: receiverId}
-					ws.hub.Register <- &group
-				}
+				ws.hub.RegisterUsers(messageList.GroupID, client.UserID, messageList.ReceiverList)
 			} else if messageList.Status == "unregister" {
-				for _, receiverId := range messageList.ReceiverList {
-					group := RegisterRequest{GroupID: messageList.GroupID, UserID: receiverId}
-					ws.hub.Unregister <- &group
-				}
+				ws.hub.UnregisterUsers(messageList.GroupID, client.UserID, messageList.ReceiverList)
 			} else if messageList.Status == "broadcast" || messageList.Status == "edited" {
 				msg, _ := json.Marshal(messageList)
 				ws.hub.Broadcast <- string(msg)
 			} else if messageList.Status == "create" {
 				ws.hub.CreateGroup(messageList.GroupID, messageList.GroupName, client.UserID, messageList.ReceiverList)
+			} else if messageList.Status == "admin" {
+				ws.hub.AddAdmin(messageList.GroupID, messageList.SenderID, messageList.ReceiverList)
+			} else if messageList.Status == "delete" {
+				ws.hub.DeleteGroup(messageList.GroupID)
 			}
 			continue
 		}

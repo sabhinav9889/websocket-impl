@@ -12,6 +12,7 @@ type Group struct {
 	GroupID string          `json:"group_id"`
 	Name    string          `json:"name"`
 	Clients map[string]bool `json:"clients"` // list of clients
+	Admin   map[string]bool `json:"admin"`   // list of admins
 	Mu      sync.RWMutex
 }
 
@@ -52,8 +53,11 @@ func (hub *Hub) PrintGroup() {
 }
 
 func (hub *Hub) CreateGroup(groupId, name, userId string, users []string) {
-	grp := Group{GroupID: groupId, Name: name, Clients: make(map[string]bool)}
+	grp := Group{GroupID: groupId, Name: name, Clients: make(map[string]bool), Admin: make(map[string]bool)}
 	if _, ok := hub.Groups.Load(grp.GroupID); !ok {
+		grp.Mu.Lock()
+		grp.Admin[userId] = true
+		grp.Mu.Unlock()
 		hub.Groups.Store(grp.GroupID, &grp)
 		hub.Register <- &RegisterRequest{GroupID: grp.GroupID, UserID: userId}
 		for _, user := range users {
@@ -62,6 +66,72 @@ func (hub *Hub) CreateGroup(groupId, name, userId string, users []string) {
 		log.Info("Group created successfully: ", grp.Name)
 	} else {
 		log.Info("Group already exists: ", grp.Name)
+	}
+}
+
+func (hub *Hub) DeleteGroup(groupId string) {
+	if _, ok := hub.Groups.Load(groupId); ok {
+		hub.Groups.Delete(groupId)
+		log.Info("Group deleted successfully")
+	} else {
+		log.Info("Group not found")
+	}
+}
+
+func (hub *Hub) UnregisterUsers(groupId, userId string, userList []string) {
+	if grp, ok := hub.Groups.Load(groupId); ok {
+		grp.(*Group).Mu.RLock()
+		_, ok := grp.(*Group).Clients[userId]
+		grp.(*Group).Mu.RUnlock()
+		if ok {
+			for _, receiverId := range userList {
+				group := RegisterRequest{GroupID: groupId, UserID: receiverId}
+				hub.Unregister <- &group
+			}
+			log.Info("Client unregistered successfully from group")
+		} else {
+			log.Info("Client not registered in group")
+		}
+	}
+}
+
+func (hub *Hub) RegisterUsers(groupId, userId string, userList []string) {
+	if grp, ok := hub.Groups.Load(groupId); ok {
+		grp.(*Group).Mu.RLock()
+		_, ok := grp.(*Group).Admin[userId]
+		grp.(*Group).Mu.RUnlock()
+		if ok {
+			for _, receiverId := range userList {
+				group := RegisterRequest{GroupID: groupId, UserID: receiverId}
+				hub.Register <- &group
+			}
+		} else {
+			log.Info("Permission denied: Client is not admin")
+		}
+	}
+}
+
+func (hub *Hub) AddAdmin(groupId, userId string, userList []string) {
+	if grp, ok := hub.Groups.Load(groupId); ok {
+		grp.(*Group).Mu.RLock()
+		_, ok := grp.(*Group).Admin[userId]
+		grp.(*Group).Mu.RUnlock()
+		if ok {
+			for _, receiverId := range userList {
+				group := RegisterRequest{GroupID: groupId, UserID: receiverId}
+				hub.Register <- &group
+				grp.(*Group).Mu.Lock()
+				grp.(*Group).Admin[receiverId] = true
+				grp.(*Group).Mu.Unlock()
+				log.Info("Client added as admin successfully in group")
+			}
+			hub.Register <- &RegisterRequest{GroupID: groupId, UserID: userId}
+			log.Info("Client added as admin successfully in group")
+		} else {
+			log.Info("Client not registered in group")
+		}
+	} else {
+		log.Info("Group not found")
 	}
 }
 
@@ -125,7 +195,7 @@ func (hub *Hub) Run(ws *WebSocketServer) {
 						log.Info("Message broadcast successfully in group")
 					}
 				} else {
-					log.Info("Client is not registered yet in the group: ", msg.SenderID)
+					log.Info("Client is not registered in the group: ", msg.SenderID)
 				}
 			} else {
 				log.Info("Group not found")
